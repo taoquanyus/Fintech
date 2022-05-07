@@ -32,8 +32,8 @@ def read_data(debug=True):
     features.remove('CUST_UID')
     features.remove('LABEL')
 
-    train_x = sparse.csr_matrix(train[features]);
-    test_x = sparse.csr_matrix(test[features]);
+    train_x = sparse.csr_matrix(train[features])
+    test_x = sparse.csr_matrix(test[features])
     print("done")
     return train_x, test_x
 
