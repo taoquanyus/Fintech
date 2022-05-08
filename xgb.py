@@ -25,8 +25,8 @@ def read_data(debug=True):
     :return:
     """
     print("read_data...")
-    train = pd.read_csv("preprocesses/train_dict_encode.csv")
-    test = pd.read_csv("preprocesses/test_dict_encode.csv")
+    train = pd.read_csv("preprocesses/train_clean_encode.csv")
+    test = pd.read_csv("preprocesses/test_clean_encode.csv")
 
     features = train.columns.tolist()
     features.remove('CUST_UID')
@@ -44,7 +44,7 @@ def params_append(params):
     :param params:
     :return:
     """
-    params['objective'] = 'binary:auc'
+    params['objective'] = 'binary:logistic'
     params['eval_metric'] = 'auc'
     params["min_child_weight"] = int(params["min_child_weight"])
     params['max_depth'] = int(params['max_depth'])
@@ -58,13 +58,12 @@ def param_beyesian(train, xgb_cv=None):
     :param train:
     :return:
     """
-    train_y = pd.read_csv("preprocesses/train_clean.csv")['LABEL']
-    sample_index = train_y.sample(frac=0.1, random_state=2020).index.tolist()
+    train_y = pd.read_csv("preprocesses/train_dict_encode.csv")['LABEL']
+    sample_index = train_y.sample(frac=1, random_state=2020).index.tolist()
     train_data = xgb.DMatrix(train.tocsr()[sample_index, :
                              ], train_y.loc[sample_index].values, silent=True)
     def xgb_cv(colsample_bytree, subsample, min_child_weight, max_depth, eta):
         """
-
         :param colsample_bytree:
         :param subsample:
         :param min_child_weight:
@@ -74,8 +73,8 @@ def param_beyesian(train, xgb_cv=None):
         :param reg_lambda:
         :return:
         """
-        params = {'objective': 'binary:auc',
-                  'early_stopping_round': 50,
+        params = {'objective': 'binary:logistic',
+                  'early_stopping_round': 25,
                   'eval_metric': 'auc'}
         params['colsample_bytree'] = max(min(colsample_bytree, 1), 0)
         params['subsample'] = max(min(subsample, 1), 0)
@@ -85,11 +84,11 @@ def param_beyesian(train, xgb_cv=None):
         print(params)
         cv_result = xgb.cv(params, train_data,
                            num_boost_round=10000,
-                           nfold=2, seed=2,
+                           nfold=2, seed=2022,
                            stratified=False,
                            shuffle=True,
-                           early_stopping_rounds=40,
-                           verbose_eval=False)
+                           early_stopping_rounds=25,
+                           verbose_eval=True)
         return max(cv_result['test-auc-mean'])
     xgb_bo = BayesianOptimization(
         xgb_cv,
@@ -101,7 +100,7 @@ def param_beyesian(train, xgb_cv=None):
          }
     )
     xgb_bo.maximize(init_points=21, n_iter=5)  # init_points表示初始点，n_iter代表迭代次数（即采样数）
-    print(xgb_bo.max['LABEL'], xgb_bo.max['params'])
+    print(xgb_bo.max['target'], xgb_bo.max['params'])
     return xgb_bo.max['params']
 
 
@@ -117,11 +116,11 @@ def train_predict(train, test, params):
     test_data = xgb.DMatrix(test)
 
     params = params_append(params)
-    kf = KFold(n_splits=10, random_state=2020, shuffle=True)
+    kf = KFold(n_splits=5, random_state=2022, shuffle=True)
     prediction_test = 0
     cv_score = []
     prediction_train = pd.Series()
-    ESR = 30
+    ESR = 20
     NBR = 10000
     VBE = 50
     for train_part_index, eval_index in kf.split(train, train_y):
@@ -138,12 +137,12 @@ def train_predict(train, test, params):
         prediction_train = prediction_train.append(pd.Series(eval_pre, index=eval_index))
         score = np.sqrt(mean_squared_error(train_y.loc[eval_index].values, eval_pre))
         cv_score.append(score)
-    print(cv_score, sum(cv_score) / 10)
-    pd.Series(prediction_train.sort_index().values).to_csv("preprocess/train_xgboost.csv", index=False)
-    pd.Series(prediction_test / 10).to_csv("preprocess/test_xgboost.csv", index=False)
+    print(cv_score, sum(cv_score) / 5)
+    pd.Series(prediction_train.sort_index().values).to_csv("preprocesses/train_xgboost.csv", index=False)
+    pd.Series(prediction_test / 5).to_csv("preprocesses/test_xgboost.csv", index=False)
     test = pd.read_csv('preprocesses/test_dict_encode.csv')
-    test['LABEL'] = prediction_test / 10
-    test[['CUST_UID', 'LABEL']].to_csv("result/submission_xgboost.csv", index=False)
+    test['LABEL'] = prediction_test / 5
+    test[['CUST_UID', 'LABEL']].to_csv("result/submission_xgboost.txt", index=False, sep=' ', header=None)
     return
 
 if __name__ == "__main__":
