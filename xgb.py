@@ -16,7 +16,8 @@ from numpy.random import RandomState
 from sklearn.metrics import mean_squared_error
 from bayes_opt import BayesianOptimization
 from sklearn.model_selection import KFold
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import roc_auc_score
+
 
 def read_data(debug=True):
     """
@@ -25,8 +26,8 @@ def read_data(debug=True):
     :return:
     """
     print("read_data...")
-    train = pd.read_csv("preprocesses/train_clean_encode.csv")
-    test = pd.read_csv("preprocesses/test_clean_encode.csv")
+    train = pd.read_csv("preprocesses/train_dict_encode.csv")
+    test = pd.read_csv("preprocesses/test_dict_encode.csv")
 
     features = train.columns.tolist()
     features.remove('CUST_UID')
@@ -62,6 +63,7 @@ def param_beyesian(train, xgb_cv=None):
     sample_index = train_y.sample(frac=1, random_state=2020).index.tolist()
     train_data = xgb.DMatrix(train.tocsr()[sample_index, :
                              ], train_y.loc[sample_index].values, silent=True)
+
     def xgb_cv(colsample_bytree, subsample, min_child_weight, max_depth, eta):
         """
         :param colsample_bytree:
@@ -73,14 +75,9 @@ def param_beyesian(train, xgb_cv=None):
         :param reg_lambda:
         :return:
         """
-        params = {'objective': 'binary:logistic',
-                  'early_stopping_round': 25,
-                  'eval_metric': 'auc'}
-        params['colsample_bytree'] = max(min(colsample_bytree, 1), 0)
-        params['subsample'] = max(min(subsample, 1), 0)
-        params["min_child_weight"] = int(min_child_weight)
-        params['max_depth'] = int(max_depth)
-        params['eta'] = float(eta)
+        params = {'objective': 'binary:logistic', 'early_stopping_round': 10, 'eval_metric': 'auc',
+                  'colsample_bytree': max(min(colsample_bytree, 1), 0), 'subsample': max(min(subsample, 1), 0),
+                  "min_child_weight": int(min_child_weight), 'max_depth': int(max_depth), 'eta': float(eta)}
         print(params)
         cv_result = xgb.cv(params, train_data,
                            num_boost_round=10000,
@@ -90,6 +87,7 @@ def param_beyesian(train, xgb_cv=None):
                            early_stopping_rounds=25,
                            verbose_eval=True)
         return max(cv_result['test-auc-mean'])
+
     xgb_bo = BayesianOptimization(
         xgb_cv,
         {'colsample_bytree': (0.5, 1),
@@ -112,7 +110,7 @@ def train_predict(train, test, params):
     :param params:
     :return:
     """
-    train_y = pd.read_csv("preprocesses/train_clean.csv")['LABEL']
+    train_y = pd.read_csv("clean/train_clean.csv")['LABEL']
     test_data = xgb.DMatrix(test)
 
     params = params_append(params)
@@ -120,7 +118,7 @@ def train_predict(train, test, params):
     prediction_test = 0
     cv_score = []
     prediction_train = pd.Series()
-    ESR = 20
+    ESR = 10
     NBR = 10000
     VBE = 50
     for train_part_index, eval_index in kf.split(train, train_y):
@@ -130,12 +128,12 @@ def train_predict(train, test, params):
         eval = xgb.DMatrix(train.tocsr()[eval_index, :],
                            train_y.loc[eval_index])
         bst = xgb.train(params, train_part, NBR, [(train_part, 'train'),
-                                                          (eval, 'eval')], verbose_eval=VBE,
+                                                  (eval, 'eval')], verbose_eval=VBE,
                         maximize=False, early_stopping_rounds=ESR, )
         prediction_test += bst.predict(test_data)
         eval_pre = bst.predict(eval)
         prediction_train = prediction_train.append(pd.Series(eval_pre, index=eval_index))
-        score = np.sqrt(mean_squared_error(train_y.loc[eval_index].values, eval_pre))
+        score = roc_auc_score(train_y.loc[eval_index].values, eval_pre)
         cv_score.append(score)
     print(cv_score, sum(cv_score) / 5)
     pd.Series(prediction_train.sort_index().values).to_csv("preprocesses/train_xgboost.csv", index=False)
@@ -145,8 +143,10 @@ def train_predict(train, test, params):
     test[['CUST_UID', 'LABEL']].to_csv("result/submission_xgboost.txt", index=False, sep=' ', header=None)
     return
 
+
 if __name__ == "__main__":
     train, test = read_data(debug=False)
     best_clf = param_beyesian(train)
     train_predict(train, test, best_clf)
-# [3.6799306462307517, 3.6476521867457588, 3.698480976611057, 3.7718461304040853, 3.579301270046094] 3.6754422420075494
+
+#[0.9368078207322392, 0.9459893507205956, 0.9460256506188425, 0.9388256133507716, 0.9468539357981105] 0.9429004742441119
