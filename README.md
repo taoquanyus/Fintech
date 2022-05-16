@@ -5,7 +5,7 @@
 * 数据集：
     * train set：40000条数据
     * test_A set: 10000条数据（前10天）
-    * test_B set: 12000条数据（后十天）
+    * test_B set: 12000条数据（后3天）
     * feature_explain: 数据说明
 * 评价指标：ROC_AUC
 * 分数计算：test_A * 0.3+ test_B * 0.7
